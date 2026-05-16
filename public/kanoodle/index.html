@@ -1,0 +1,473 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Kanoodle 三角拼图 - 多解版</title>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Hiragino Sans GB", sans-serif; background: #f5f5f7; min-height: 100vh; padding: 1rem; }
+#app { max-width: 1180px; margin: 0 auto; }
+.top-bar { display: flex; align-items: center; justify-content: space-between; margin-bottom: .75rem; flex-wrap: wrap; gap: 8px; }
+.title { font-size: 20px; font-weight: 600; color: #1d1d1f; }
+.subtitle { font-size: 13px; color: #6e6e73; margin-top: 2px; }
+.layout { display: grid; grid-template-columns: 220px minmax(420px, 1fr) 230px; gap: 12px; align-items: start; }
+@media (max-width: 900px) { .layout { grid-template-columns: 1fr; } }
+.board-wrap { background: #fff; border: 1px solid #d2d2d7; border-radius: 14px; padding: 10px; overflow: hidden; display:flex; align-items:center; justify-content:center; min-height: 470px; }
+.sidebar, .leftbar { display: flex; flex-direction: column; gap: 10px; }
+.panel { background: #fff; border: 1px solid #d2d2d7; border-radius: 14px; padding: 10px; }
+.panel-title { font-size: 11px; font-weight: 600; color: #6e6e73; margin-bottom: 8px; text-transform: uppercase; letter-spacing: 0.06em; }
+.piece-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+.piece-btn { border: 1px solid #d2d2d7; border-radius: 10px; padding: 4px 3px; cursor: pointer; background: #fff; display: flex; flex-direction: column; align-items: center; gap: 2px; transition: all 0.15s; min-height: 54px; }
+.piece-btn:hover { background: #f5f5f7; border-color: #b0b0b5; }
+.piece-btn.selected { border: 2px solid #0071e3; background: #e8f0fe; }
+.piece-btn.placed { opacity: 0.35; cursor: not-allowed; pointer-events: none; }
+.piece-label { font-size: 9px; color: #6e6e73; font-weight: 600; }
+.rotate-panel { display: none; }
+.rotate-panel.visible { display: block; }
+.orient-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 5px; }
+.orient-btn { border: 1px solid #d2d2d7; border-radius: 8px; padding: 3px; cursor: pointer; background: #fff; display: flex; align-items: center; justify-content: center; transition: all 0.15s; }
+.orient-btn:hover { background: #f5f5f7; }
+.orient-btn.active { border: 2px solid #0071e3; background: #e8f0fe; }
+.actions { display: grid; grid-template-columns: 1fr; gap: 7px; }
+.btn { border: 1px solid #d2d2d7; border-radius: 10px; padding: 8px 10px; cursor: pointer; background: #fff; font-size: 13px; font-weight: 500; color: #1d1d1f; font-family: inherit; display: flex; align-items: center; gap: 6px; justify-content: center; width: 100%; transition: background 0.15s; }
+.btn:hover { background: #f5f5f7; }
+.btn.primary { background: #0071e3; color: #fff; border-color: #0071e3; }
+.btn.primary:hover { background: #0077ed; }
+.btn.danger { background: #fff0f0; color: #d70015; border-color: #ffb3b8; }
+.btn:disabled { opacity: 0.4; cursor: not-allowed; }
+.mode-row { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+.mode-btn.active { background: #1d1d1f; color: #fff; border-color: #1d1d1f; }
+.status-bar { background: #f5f5f7; border-radius: 10px; padding: 8px 12px; font-size: 12px; color: #6e6e73; min-height: 34px; display: flex; align-items: center; border: 1px solid #e0e0e0; }
+.status-bar.ok { color: #1a7f37; background: #eafaf1; border-color: #a8d5b5; }
+.status-bar.err { color: #d70015; background: #fff0f0; border-color: #ffb3b8; }
+.hint { font-size: 12px; line-height: 1.5; color: #6e6e73; }
+.counter { font-size: 12px; color: #1d1d1f; background: #f5f5f7; border-radius: 10px; padding: 8px 10px; border: 1px solid #e0e0e0; }
+canvas { display: block; width: 100%; max-width: 700px; height: auto; }
+</style>
+</head>
+<body>
+<div id="app">
+  <div class="top-bar">
+    <div>
+      <div class="title">Kanoodle 三角拼图 · 多解演示版</div>
+      <div class="subtitle">任意摆放初始积木 → 多解求解 → 一次显示或分步显示</div>
+    </div>
+    <div id="status" class="status-bar">请先选择一个积木块</div>
+  </div>
+  <div class="layout">
+    <div class="leftbar">
+      <div class="panel">
+        <div class="panel-title">12块积木</div>
+        <div class="piece-grid" id="piece-grid"></div>
+      </div>
+      <div class="panel rotate-panel" id="rotate-panel">
+        <div class="panel-title">选择方向</div>
+        <div class="orient-grid" id="orient-grid"></div>
+      </div>
+    </div>
+    <div class="board-wrap">
+      <canvas id="board"></canvas>
+    </div>
+    <div class="sidebar">
+      <div class="panel">
+        <div class="panel-title">解答方式</div>
+        <div class="mode-row">
+          <button class="btn mode-btn active" id="mode-full">一次给出</button>
+          <button class="btn mode-btn" id="mode-step">分步给出</button>
+        </div>
+      </div>
+      <div class="actions">
+        <button class="btn primary" id="btn-solve">▶ 求解 / 重新求解</button>
+        <button class="btn" id="btn-next-solution" disabled>换一个解答</button>
+        <button class="btn" id="btn-next-step" disabled>下一步</button>
+        <button class="btn" id="btn-clear-solution" disabled>清除解答，保留初始</button>
+        <button class="btn" id="btn-undo">撤销最后初始块</button>
+        <button class="btn danger" id="btn-reset">↺ 重置棋盘</button>
+      </div>
+      <div class="counter" id="counter">初始块：0；方案：0</div>
+      <div class="panel">
+        <div class="panel-title">操作说明</div>
+        <div class="hint">
+          初始积木可任意摆放；同一条件下可切换不同方案；分步模式下点“下一步”逐块显示。
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+<script>
+const TRI = 10;
+const MAX_SOLUTIONS = 200;
+const PIECES = {
+  "V3": [[0,0],[1,0],[0,1]],
+  "I4": [[0,0],[1,0],[2,0],[3,0]],
+  "L4": [[0,0],[1,0],[2,0],[0,1]],
+  "O4": [[0,0],[1,0],[0,1],[1,1]],
+  "I5": [[0,0],[1,0],[2,0],[0,1],[2,1]],
+  "L5": [[0,0],[1,0],[2,0],[3,0],[0,1]],
+  "P5": [[0,0],[1,0],[2,0],[0,1],[1,1]],
+  "T5": [[0,0],[1,0],[2,0],[2,1],[3,1]],
+  "V5": [[0,0],[1,0],[2,0],[0,1],[0,2]],
+  "W5": [[0,0],[1,0],[1,1],[2,1],[2,2]],
+  "Z5": [[1,0],[0,1],[1,1],[2,1],[1,2]],
+  "Y5": [[0,0],[1,0],[2,0],[3,0],[1,1]]
+};
+const COLORS = {
+  "V3":"#FFDAB9","I4":"#2E7D32","L4":"#9E9E9E","O4":"#F9A825",
+  "I5":"#B0BEC5","L5":"#F48FB1","P5":"#29B6F6","T5":"#6A1B9A",
+  "V5":"#1565C0","W5":"#FF6D00","Z5":"#D50000","Y5":"#66BB6A"
+};
+const NAMES = Object.keys(PIECES);
+const board = new Set();
+for(let y=0;y<TRI;y++) for(let x=0;x<TRI;x++) if(x<=y) board.add(x+","+y);
+
+function normShape(pts){
+  const mx=Math.min(...pts.map(p=>p[0])), my=Math.min(...pts.map(p=>p[1]));
+  return pts.map(([x,y])=>[x-mx,y-my]).sort((a,b)=>a[0]-b[0]||a[1]-b[1]);
+}
+function getAllOrientations(shape){
+  const seen=new Set(), result=[];
+  let s=shape.map(p=>[...p]);
+  for(let r=0;r<4;r++){
+    s=s.map(([x,y])=>[-y,x]);
+    [s, s.map(([x,y])=>[-x,y])].forEach(f=>{
+      const n=normShape(f), key=JSON.stringify(n);
+      if(!seen.has(key)){ seen.add(key); result.push(n); }
+    });
+  }
+  return result;
+}
+
+const CELL=34, H=CELL*Math.SQRT2/2, PAD=18;
+const CW=Math.ceil(TRI*2*H+PAD*2), CH=Math.ceil(TRI*H+PAD*2);
+const canvas=document.getElementById("board");
+canvas.width=CW; canvas.height=CH;
+const ctx=canvas.getContext("2d");
+
+function txCoord(x,y){ return [(x+y)*H+PAD+H*0.5, ((TRI-1)-(y-x))*H+PAD+H*0.5]; }
+function cellVertices(x,y){
+  const [cx,cy]=txCoord(x,y);
+  return [[cx,cy-H],[cx+H,cy],[cx,cy+H],[cx-H,cy]];
+}
+function hitTest(px,py){
+  let best=null, bd=Infinity;
+  for(const key of board){
+    const [x,y]=key.split(",").map(Number);
+    const [cx,cy]=txCoord(x,y);
+    const d=Math.abs(px-cx)+Math.abs(py-cy);
+    if(d<bd){bd=d;best={x,y};}
+  }
+  return bd<H*1.1?best:null;
+}
+
+let selectedPiece=null, selectedOrient=null, placedPieces={}, placedOrder=[];
+let solutions=[], solutionIndex=-1, displayMode="full", stepIndex=0, solving=false;
+let hoverCell=null, hoverCells=null, hoverValid=false;
+
+function visiblePieces(){
+  if(solutionIndex<0 || !solutions[solutionIndex]) return Object.values(placedPieces);
+  const sol = solutions[solutionIndex];
+  if(displayMode==="full") return sol;
+  const fixedNames = new Set(Object.keys(placedPieces));
+  const fixed = sol.filter(p=>fixedNames.has(p.name));
+  const rest = sol.filter(p=>!fixedNames.has(p.name));
+  return fixed.concat(rest.slice(0, stepIndex));
+}
+
+function drawBoard(){
+  ctx.clearRect(0,0,CW,CH);
+  const pieces=visiblePieces();
+  for(const key of board){
+    const [x,y]=key.split(",").map(Number);
+    const v=cellVertices(x,y);
+    ctx.beginPath(); v.forEach(([vx,vy],i)=>i?ctx.lineTo(vx,vy):ctx.moveTo(vx,vy)); ctx.closePath();
+    let fill="#EFEFEF";
+    const pl=pieces.find(p=>p.cells.some(c=>c[0]===x&&c[1]===y));
+    if(pl) fill=COLORS[pl.name];
+    ctx.fillStyle=fill; ctx.fill();
+    ctx.strokeStyle="#fff"; ctx.lineWidth=1.5; ctx.stroke();
+  }
+  drawLabels(pieces);
+  if(selectedPiece&&selectedOrient&&solutionIndex<0) drawHover();
+}
+function hexLum(h){ return 0.299*parseInt(h.slice(1,3),16)+0.587*parseInt(h.slice(3,5),16)+0.114*parseInt(h.slice(5,7),16); }
+function drawLabels(pieces){
+  ctx.font="bold "+Math.max(6,Math.floor(H*0.42))+"px sans-serif";
+  ctx.textAlign="center"; ctx.textBaseline="middle";
+  for(const piece of pieces){
+    ctx.fillStyle=hexLum(COLORS[piece.name])>160?"#333":"#fff";
+    for(const [x,y] of piece.cells){ const [cx,cy]=txCoord(x,y); ctx.fillText(piece.name,cx,cy); }
+  }
+}
+function drawHover(){
+  if(!hoverCells) return;
+  const col=COLORS[selectedPiece];
+  for(const [x,y] of hoverCells){
+    if(!board.has(x+","+y)) continue;
+    const v=cellVertices(x,y);
+    ctx.beginPath(); v.forEach(([vx,vy],i)=>i?ctx.lineTo(vx,vy):ctx.moveTo(vx,vy)); ctx.closePath();
+    ctx.fillStyle=hoverValid?col+"BB":"#ff000055"; ctx.fill();
+    ctx.strokeStyle=hoverValid?col:"#ff0000"; ctx.lineWidth=2.5; ctx.stroke();
+  }
+}
+function computeHoverCells(cell){
+  if(!selectedOrient||!cell) return null;
+  const mnx=Math.min(...selectedOrient.map(p=>p[0])), mny=Math.min(...selectedOrient.map(p=>p[1]));
+  return selectedOrient.map(([dx,dy])=>[cell.x+dx-mnx,cell.y+dy-mny]);
+}
+function getEventXY(e, el){
+  const r=el.getBoundingClientRect(), sx=CW/r.width, sy=CH/r.height;
+  const src=e.changedTouches?e.changedTouches[0]:(e.touches?e.touches[0]:e);
+  return [(src.clientX-r.left)*sx,(src.clientY-r.top)*sy];
+}
+function setStatus(msg,type){
+  const el=document.getElementById("status");
+  el.textContent=msg; el.className="status-bar"+(type?" "+type:"");
+}
+function updateCounter(){
+  const total=solutions.length;
+  const current=solutionIndex>=0 ? solutionIndex+1 : 0;
+  const fixed=Object.keys(placedPieces).length;
+  const stepText = (displayMode==="step" && solutionIndex>=0) ? "；步骤："+stepIndex+"/"+(12-fixed) : "";
+  document.getElementById("counter").textContent = "初始块："+fixed+"；方案："+current+"/"+total+stepText;
+  document.getElementById("btn-next-solution").disabled = total<2;
+  document.getElementById("btn-clear-solution").disabled = solutionIndex<0;
+  document.getElementById("btn-next-step").disabled = !(displayMode==="step" && solutionIndex>=0 && stepIndex < (12-fixed));
+}
+function clearSolutionOnly(){
+  solutions=[]; solutionIndex=-1; stepIndex=0; updateCounter(); drawBoard();
+}
+
+canvas.addEventListener("mousemove",e=>{
+  if(!selectedPiece||!selectedOrient||solutionIndex>=0) return;
+  const [px,py]=getEventXY(e,canvas), cell=hitTest(px,py);
+  if(!cell){hoverCell=null;hoverCells=null;drawBoard();return;}
+  if(hoverCell&&hoverCell.x===cell.x&&hoverCell.y===cell.y) return;
+  hoverCell=cell; hoverCells=computeHoverCells(cell);
+  const occ=new Set(Object.values(placedPieces).flatMap(p=>p.cells.map(([x,y])=>x+","+y)));
+  hoverValid=hoverCells&&hoverCells.every(([x,y])=>board.has(x+","+y)&&!occ.has(x+","+y));
+  drawBoard();
+});
+canvas.addEventListener("mouseleave",()=>{hoverCell=null;hoverCells=null;drawBoard();});
+canvas.addEventListener("click",e=>handlePlace(e));
+canvas.addEventListener("touchend",e=>{e.preventDefault();handlePlace(e);},{passive:false});
+
+function handlePlace(e){
+  if(!selectedPiece||!selectedOrient||solutionIndex>=0) return;
+  const [px,py]=getEventXY(e,canvas), cell=hitTest(px,py);
+  if(cell) tryPlace(cell.x,cell.y);
+}
+function tryPlace(cx,cy){
+  const mnx=Math.min(...selectedOrient.map(p=>p[0])), mny=Math.min(...selectedOrient.map(p=>p[1]));
+  const pts=selectedOrient.map(([dx,dy])=>[cx+dx-mnx,cy+dy-mny]);
+  const occ=new Set(Object.values(placedPieces).flatMap(p=>p.cells.map(([x,y])=>x+","+y)));
+  if(pts.every(([px,py])=>board.has(px+","+py)&&!occ.has(px+","+py))){
+    placedPieces[selectedPiece]={name:selectedPiece,cells:pts};
+    placedOrder.push(selectedPiece);
+    document.querySelector("[data-name=\""+selectedPiece+"\"]").classList.add("placed");
+    selectedPiece=null; selectedOrient=null; hoverCells=null; hoverCell=null;
+    document.querySelectorAll(".piece-btn").forEach(b=>b.classList.remove("selected"));
+    document.getElementById("rotate-panel").classList.remove("visible");
+    clearSolutionOnly();
+    setStatus("已放置初始块。共 "+Object.keys(placedPieces).length+" 块，可继续摆放或求解。","");
+  } else setStatus("此处无法放置（越界或重叠），换个位置试试","err");
+}
+
+function drawMiniShape(ctx2,shape,w,h,color){
+  ctx2.clearRect(0,0,w,h);
+  const n=normShape(shape), S=9;
+  const mx=Math.max(...n.map(p=>p[0])), my=Math.max(...n.map(p=>p[1]));
+  const ox=Math.floor((w-(mx+1)*S)/2), oy=Math.floor((h-(my+1)*S)/2);
+  n.forEach(([x,y])=>{ ctx2.fillStyle=color; ctx2.fillRect(ox+x*S,oy+y*S,S-1,S-1); });
+}
+function buildPalette(){
+  const grid=document.getElementById("piece-grid"); grid.innerHTML="";
+  NAMES.forEach(name=>{
+    const btn=document.createElement("button"); btn.className="piece-btn"; btn.dataset.name=name;
+    const c=document.createElement("canvas"); c.width=72; c.height=44;
+    drawMiniShape(c.getContext("2d"),PIECES[name],72,44,COLORS[name]);
+    btn.appendChild(c);
+    const lbl=document.createElement("span"); lbl.className="piece-label"; lbl.textContent=name;
+    btn.appendChild(lbl);
+    btn.onclick=()=>{
+      if(placedPieces[name]||solutionIndex>=0) return;
+      selectedPiece=name; selectedOrient=null;
+      document.querySelectorAll(".piece-btn").forEach(b=>b.classList.remove("selected"));
+      btn.classList.add("selected");
+      buildOrientPanel(name);
+      document.getElementById("rotate-panel").classList.add("visible");
+      setStatus("已选 "+name+"，请选择方向后点击棋盘","");
+      hoverCells=null; drawBoard();
+    };
+    grid.appendChild(btn);
+  });
+}
+function buildOrientPanel(name){
+  const orients=getAllOrientations(PIECES[name]);
+  const grid=document.getElementById("orient-grid"); grid.innerHTML="";
+  orients.forEach((or,idx)=>{
+    const btn=document.createElement("button"); btn.className="orient-btn";
+    const c=document.createElement("canvas"); c.width=44; c.height=44;
+    drawMiniShape(c.getContext("2d"),or,44,44,COLORS[name]);
+    btn.appendChild(c);
+    btn.onclick=()=>{
+      selectedOrient=or;
+      document.querySelectorAll(".orient-btn").forEach(b=>b.classList.remove("active"));
+      btn.classList.add("active");
+      setStatus("已选 "+name+" 方向"+(idx+1)+"，点击棋盘放置","");
+      hoverCells=null; drawBoard();
+    };
+    if(idx===0){ selectedOrient=or; btn.classList.add("active"); }
+    grid.appendChild(btn);
+  });
+}
+
+function runDLXAll(limit=MAX_SOLUTIONS){
+  const colKeys=[...Array(12).keys(),...[...board]];
+  const X={},Y={}; colKeys.forEach(c=>{X[c]=new Set();});
+  let rowId=0; const placements={};
+  for(let pid=0;pid<NAMES.length;pid++){
+    const name=NAMES[pid];
+    if(placedPieces[name]){
+      const pts=placedPieces[name].cells;
+      const cols=[pid,...pts.map(([x,y])=>x+","+y)];
+      Y[rowId]=cols; cols.forEach(c=>X[c].add(rowId)); placements[rowId]={name,cells:pts}; rowId++;
+    } else {
+      for(const rot of getAllOrientations(PIECES[name])){
+        for(let y=0;y<TRI;y++) for(let x=0;x<TRI;x++){
+          const pts=rot.map(([dx,dy])=>[x+dx,y+dy]);
+          if(pts.every(([px,py])=>board.has(px+","+py))){
+            const cols=[pid,...pts.map(([px,py])=>px+","+py)];
+            Y[rowId]=cols; cols.forEach(c=>X[c].add(rowId)); placements[rowId]={name,cells:pts}; rowId++;
+          }
+        }
+      }
+    }
+  }
+  const Xc={},Yc={};
+  colKeys.forEach(c=>{Xc[c]=new Set(X[c]);});
+  Object.entries(Y).forEach(([r,cols])=>{Yc[parseInt(r)]=cols;});
+  const preRows=[];
+  for(const [name,data] of Object.entries(placedPieces)){
+    const sc=new Set(data.cells.map(([x,y])=>x+","+y));
+    for(const [rid,p] of Object.entries(placements)){
+      if(p.name===name&&p.cells.length===data.cells.length&&p.cells.every(([x,y])=>sc.has(x+","+y))){
+        preRows.push(parseInt(rid)); break;
+      }
+    }
+  }
+  for(const r of preRows){
+    if(!Yc[r]) continue;
+    for(const j of Yc[r]){
+      if(!(j in Xc)) continue;
+      for(const i of [...Xc[j]]) for(const k of Yc[i]) if(k!==j&&k in Xc) Xc[k].delete(i);
+      delete Xc[j];
+    }
+  }
+  const out=[];
+  function dlx(sol){
+    if(out.length>=limit) return;
+    const keys=Object.keys(Xc);
+    if(!keys.length){
+      const rows=[...preRows,...sol];
+      out.push(rows.map(r=>placements[r]).sort((a,b)=>NAMES.indexOf(a.name)-NAMES.indexOf(b.name)));
+      return;
+    }
+    const c=keys.reduce((a,b)=>Xc[a].size<Xc[b].size?a:b);
+    if(!Xc[c].size) return;
+    for(const r of [...Xc[c]]){
+      sol.push(r);
+      const removed=[];
+      for(const j of Yc[r]){
+        if(!(j in Xc)){ removed.push([j,null]); continue; }
+        const old = Xc[j];
+        for(const i of [...old]) for(const k of Yc[i]) if(k!==j&&k in Xc) Xc[k].delete(i);
+        removed.push([j,old]); delete Xc[j];
+      }
+      dlx(sol);
+      for(const [j,old] of removed.reverse()){
+        if(old!==null){
+          Xc[j]=old;
+          for(const i of old) for(const k of Yc[i]) if(k!==j&&k in Xc) Xc[k].add(i);
+        }
+      }
+      sol.pop();
+      if(out.length>=limit) return;
+    }
+  }
+  dlx([]);
+  return out;
+}
+
+document.getElementById("btn-solve").onclick=()=>{
+  if(solving) return;
+  solving=true; setStatus("DLX 正在查找多套方案……","");
+  document.getElementById("btn-solve").disabled=true;
+  setTimeout(()=>{
+    const result=runDLXAll(MAX_SOLUTIONS);
+    solving=false; document.getElementById("btn-solve").disabled=false;
+    solutions=result; solutionIndex=result.length?0:-1; stepIndex=displayMode==="step"?0:12;
+    if(result.length){
+      setStatus("✓ 找到 "+result.length+" 套方案。当前显示第 1 套。","ok");
+    } else setStatus("✗ 当前初始摆放无解，请调整后重试","err");
+    updateCounter(); drawBoard();
+  },30);
+};
+document.getElementById("btn-next-solution").onclick=()=>{
+  if(!solutions.length) return;
+  solutionIndex=(solutionIndex+1)%solutions.length;
+  stepIndex=displayMode==="step"?0:12;
+  setStatus("已切换到第 "+(solutionIndex+1)+" / "+solutions.length+" 套方案。", "ok");
+  updateCounter(); drawBoard();
+};
+document.getElementById("btn-next-step").onclick=()=>{
+  if(solutionIndex<0) return;
+  const fixed=Object.keys(placedPieces).length;
+  const maxStep=12-fixed;
+  if(stepIndex<maxStep) stepIndex++;
+  setStatus("分步显示：第 "+stepIndex+" / "+maxStep+" 步。", stepIndex===maxStep?"ok":"");
+  updateCounter(); drawBoard();
+};
+document.getElementById("btn-clear-solution").onclick=()=>{
+  clearSolutionOnly();
+  setStatus("已清除解答，保留初始积木。可继续摆放或重新求解。","");
+};
+document.getElementById("btn-undo").onclick=()=>{
+  if(solutionIndex>=0){ setStatus("请先清除解答，再撤销初始块。","err"); return; }
+  const name=placedOrder.pop();
+  if(!name){ setStatus("没有可撤销的初始块。","err"); return; }
+  delete placedPieces[name];
+  const btn=document.querySelector("[data-name=\""+name+"\"]");
+  if(btn) btn.classList.remove("placed","selected");
+  clearSolutionOnly();
+  setStatus("已撤销 "+name+"。","");
+};
+document.getElementById("btn-reset").onclick=()=>{
+  placedPieces={}; placedOrder=[]; selectedPiece=null; selectedOrient=null;
+  hoverCell=null; hoverCells=null; solving=false; solutions=[]; solutionIndex=-1; stepIndex=0;
+  document.querySelectorAll(".piece-btn").forEach(b=>b.classList.remove("selected","placed"));
+  document.getElementById("rotate-panel").classList.remove("visible");
+  document.getElementById("btn-solve").disabled=false;
+  setStatus("已重置，请选择积木块",""); updateCounter(); drawBoard();
+};
+document.getElementById("mode-full").onclick=()=>{
+  displayMode="full"; stepIndex=12;
+  document.getElementById("mode-full").classList.add("active");
+  document.getElementById("mode-step").classList.remove("active");
+  setStatus("已切换为一次给出。","");
+  updateCounter(); drawBoard();
+};
+document.getElementById("mode-step").onclick=()=>{
+  displayMode="step"; stepIndex=0;
+  document.getElementById("mode-step").classList.add("active");
+  document.getElementById("mode-full").classList.remove("active");
+  setStatus("已切换为分步给出。求解后点击“下一步”。","");
+  updateCounter(); drawBoard();
+};
+
+buildPalette();
+updateCounter();
+drawBoard();
+</script>
+</body>
+</html>
